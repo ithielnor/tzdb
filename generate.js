@@ -15,21 +15,29 @@ import formatTimeZone from "./lib/formatTimeZone.js";
 dotenv.config();
 
 async function run() {
-  const algoliaApplicationId = process.env.ALGOLIA_APPLICATION_ID;
-  const algoliaAdminApiKey = process.env.ALGOLIA_ADMIN_API_KEY;
-  const algoliaIndexName = process.env.ALGOLIA_INDEX_NAME;
+  let userData;
+  let algoliaIndex;
 
-  const algoliaClient = algoliasearch(algoliaApplicationId, algoliaAdminApiKey);
-  const algoliaIndex = algoliaClient.initIndex(algoliaIndexName);
+  if (process.env.ALGOLIA_APPLICATION_ID) {
+    const algoliaApplicationId = process.env.ALGOLIA_APPLICATION_ID;
+    const algoliaAdminApiKey = process.env.ALGOLIA_ADMIN_API_KEY;
+    const algoliaIndexName = process.env.ALGOLIA_INDEX_NAME;
 
-  await algoliaIndex
-    .setSettings({
-      searchableAttributes: ["name", "countryName", "timezoneName"],
-      attributesToRetrieve: ["name", "countryName", "timezoneName"],
-      customRanking: ["desc(population)"],
-    })
-    .wait();
-  const { userData } = await algoliaIndex.getSettings();
+    const algoliaClient = algoliasearch(
+      algoliaApplicationId,
+      algoliaAdminApiKey,
+    );
+    algoliaIndex = algoliaClient.initIndex(algoliaIndexName);
+
+    await algoliaIndex
+      .setSettings({
+        searchableAttributes: ["name", "countryName", "timezoneName"],
+        attributesToRetrieve: ["name", "countryName", "timezoneName"],
+        customRanking: ["desc(population)"],
+      })
+      .wait();
+    userData = await algoliaIndex.getSettings();
+  }
 
   const lastIndexUpdate =
     process.env.LAST_INDEX_UPDATE || userData?.lastIndexUpdate || "1970-01-01";
@@ -283,21 +291,23 @@ async function run() {
 
   // Algolia update
 
-  await pEachSeries(chunk(updatedCities, 500), async function saveToAlgolia(
-    citiesChunk,
-  ) {
-    await algoliaIndex.saveObjects(citiesChunk);
-  });
+  if (process.env.ALGOLIA_APPLICATION_ID) {
+    await pEachSeries(chunk(updatedCities, 500), async function saveToAlgolia(
+      citiesChunk,
+    ) {
+      await algoliaIndex.saveObjects(citiesChunk);
+    });
 
-  await algoliaIndex
-    .setSettings({
-      userData: { lastIndexUpdate: DateTime.utc().toISODate() },
-    })
-    .wait();
+    await algoliaIndex
+      .setSettings({
+        userData: { lastIndexUpdate: DateTime.utc().toISODate() },
+      })
+      .wait();
 
-  console.log(
-    `Done, ${updatedCities.length} cities were updated since last run`,
-  );
+    console.log(
+      `Done, ${updatedCities.length} cities were updated since last run`,
+    );
+  }
 }
 
 run().catch((error) => {
